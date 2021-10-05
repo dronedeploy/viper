@@ -26,10 +26,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/afero"
 	"github.com/spf13/cast"
-
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/team-rocos/viper/internal/testutil"
 )
 
 var yamlExample = []byte(`Hacker: true
@@ -381,7 +382,9 @@ func TestUnmarshaling(t *testing.T) {
 
 	unmarshalReader(r, v.config)
 	assert.True(t, InConfig("name"))
+	assert.True(t, InConfig("clothing.jacket"))
 	assert.False(t, InConfig("state"))
+	assert.False(t, InConfig("clothing.hat"))
 	assert.Equal(t, "steve", Get("name"))
 	assert.Equal(t, []interface{}{"skateboarding", "snowboarding", "go"}, Get("hobbies"))
 	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[string]interface{}{"size": "large"}}, Get("clothing"))
@@ -487,11 +490,12 @@ func TestEnv(t *testing.T) {
 	initJSON()
 
 	BindEnv("id")
-	BindEnv("f", "FOOD")
+	BindEnv("f", "FOOD", "OLD_FOOD")
 
-	os.Setenv("ID", "13")
-	os.Setenv("FOOD", "apple")
-	os.Setenv("NAME", "crunk")
+	testutil.Setenv(t, "ID", "13")
+	testutil.Setenv(t, "FOOD", "apple")
+	testutil.Setenv(t, "OLD_FOOD", "banana")
+	testutil.Setenv(t, "NAME", "crunk")
 
 	assert.Equal(t, "13", Get("id"))
 	assert.Equal(t, "apple", Get("f"))
@@ -502,18 +506,23 @@ func TestEnv(t *testing.T) {
 	assert.Equal(t, "crunk", Get("name"))
 }
 
+func TestMultipleEnv(t *testing.T) {
+	initJSON()
+
+	BindEnv("f", "FOOD", "OLD_FOOD")
+
+	testutil.Setenv(t, "OLD_FOOD", "banana")
+
+	assert.Equal(t, "banana", Get("f"))
+}
+
 func TestEmptyEnv(t *testing.T) {
 	initJSON()
 
 	BindEnv("type") // Empty environment variable
 	BindEnv("name") // Bound, but not set environment variable
 
-	os.Unsetenv("type")
-	os.Unsetenv("TYPE")
-	os.Unsetenv("name")
-	os.Unsetenv("NAME")
-
-	os.Setenv("TYPE", "")
+	testutil.Setenv(t, "TYPE", "")
 
 	assert.Equal(t, "donut", Get("type"))
 	assert.Equal(t, "Cake", Get("name"))
@@ -527,12 +536,7 @@ func TestEmptyEnv_Allowed(t *testing.T) {
 	BindEnv("type") // Empty environment variable
 	BindEnv("name") // Bound, but not set environment variable
 
-	os.Unsetenv("type")
-	os.Unsetenv("TYPE")
-	os.Unsetenv("name")
-	os.Unsetenv("NAME")
-
-	os.Setenv("TYPE", "")
+	testutil.Setenv(t, "TYPE", "")
 
 	assert.Equal(t, "", Get("type"))
 	assert.Equal(t, "Cake", Get("name"))
@@ -545,9 +549,9 @@ func TestEnvPrefix(t *testing.T) {
 	BindEnv("id")
 	BindEnv("f", "FOOD") // not using prefix
 
-	os.Setenv("FOO_ID", "13")
-	os.Setenv("FOOD", "apple")
-	os.Setenv("FOO_NAME", "crunk")
+	testutil.Setenv(t, "FOO_ID", "13")
+	testutil.Setenv(t, "FOOD", "apple")
+	testutil.Setenv(t, "FOO_NAME", "crunk")
 
 	assert.Equal(t, "13", Get("id"))
 	assert.Equal(t, "apple", Get("f"))
@@ -562,7 +566,9 @@ func TestAutoEnv(t *testing.T) {
 	Reset()
 
 	AutomaticEnv()
-	os.Setenv("FOO_BAR", "13")
+
+	testutil.Setenv(t, "FOO_BAR", "13")
+
 	assert.Equal(t, "13", Get("foo_bar"))
 }
 
@@ -571,7 +577,9 @@ func TestAutoEnvWithPrefix(t *testing.T) {
 
 	AutomaticEnv()
 	SetEnvPrefix("Baz")
-	os.Setenv("BAZ_BAR", "13")
+
+	testutil.Setenv(t, "BAZ_BAR", "13")
+
 	assert.Equal(t, "13", Get("bar"))
 }
 
@@ -579,7 +587,8 @@ func TestSetEnvKeyReplacer(t *testing.T) {
 	Reset()
 
 	AutomaticEnv()
-	os.Setenv("REFRESH_INTERVAL", "30s")
+
+	testutil.Setenv(t, "REFRESH_INTERVAL", "30s")
 
 	replacer := strings.NewReplacer("-", "_")
 	SetEnvKeyReplacer(replacer)
@@ -591,7 +600,8 @@ func TestEnvKeyReplacer(t *testing.T) {
 	v := NewWithOptions(EnvKeyReplacer(strings.NewReplacer("-", "_")))
 
 	v.AutomaticEnv()
-	_ = os.Setenv("REFRESH_INTERVAL", "30s")
+
+	testutil.Setenv(t, "REFRESH_INTERVAL", "30s")
 
 	assert.Equal(t, "30s", v.Get("refresh-interval"))
 }
@@ -694,7 +704,8 @@ func TestAllKeys(t *testing.T) {
 					{"key": 1},
 					{"key": 2},
 					{"key": 3},
-					{"key": 4}},
+					{"key": 4},
+				},
 			},
 		},
 		"title_dotenv": "DotEnv Example",
@@ -717,8 +728,9 @@ func TestAllKeysWithEnv(t *testing.T) {
 	v.BindEnv("id")
 	v.BindEnv("foo.bar")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	os.Setenv("ID", "13")
-	os.Setenv("FOO_BAR", "baz")
+
+	testutil.Setenv(t, "ID", "13")
+	testutil.Setenv(t, "FOO_BAR", "baz")
 
 	expectedKeys := sort.StringSlice{"id", "foo.bar"}
 	expectedKeys.Sort()
@@ -828,13 +840,13 @@ func TestBindPFlags(t *testing.T) {
 	v := New() // create independent Viper object
 	flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
 
-	var testValues = map[string]*string{
+	testValues := map[string]*string{
 		"host":     nil,
 		"port":     nil,
 		"endpoint": nil,
 	}
 
-	var mutatedTestValues = map[string]string{
+	mutatedTestValues := map[string]string{
 		"host":     "localhost",
 		"port":     "6060",
 		"endpoint": "/public",
@@ -859,12 +871,13 @@ func TestBindPFlags(t *testing.T) {
 	}
 }
 
+// nolint: dupl
 func TestBindPFlagsStringSlice(t *testing.T) {
 	tests := []struct {
 		Expected []string
 		Value    string
 	}{
-		{nil, ""},
+		{[]string{}, ""},
 		{[]string{"jeden"}, "jeden"},
 		{[]string{"dwa", "trzy"}, "dwa,trzy"},
 		{[]string{"cztery", "piec , szesc"}, "cztery,\"piec , szesc\""},
@@ -898,6 +911,7 @@ func TestBindPFlagsStringSlice(t *testing.T) {
 			}
 			if changed {
 				assert.Equal(t, testValue.Expected, val.StringSlice)
+				assert.Equal(t, testValue.Expected, v.Get("stringslice"))
 			} else {
 				assert.Equal(t, defaultVal, val.StringSlice)
 			}
@@ -905,12 +919,61 @@ func TestBindPFlagsStringSlice(t *testing.T) {
 	}
 }
 
+// nolint: dupl
+func TestBindPFlagsStringArray(t *testing.T) {
+	tests := []struct {
+		Expected []string
+		Value    string
+	}{
+		{[]string{}, ""},
+		{[]string{"jeden"}, "jeden"},
+		{[]string{"dwa,trzy"}, "dwa,trzy"},
+		{[]string{"cztery,\"piec , szesc\""}, "cztery,\"piec , szesc\""},
+	}
+
+	v := New() // create independent Viper object
+	defaultVal := []string{"default"}
+	v.SetDefault("stringarray", defaultVal)
+
+	for _, testValue := range tests {
+		flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		flagSet.StringArray("stringarray", testValue.Expected, "test")
+
+		for _, changed := range []bool{true, false} {
+			flagSet.VisitAll(func(f *pflag.Flag) {
+				f.Value.Set(testValue.Value)
+				f.Changed = changed
+			})
+
+			err := v.BindPFlags(flagSet)
+			if err != nil {
+				t.Fatalf("error binding flag set, %v", err)
+			}
+
+			type TestStr struct {
+				StringArray []string
+			}
+			val := &TestStr{}
+			if err := v.Unmarshal(val); err != nil {
+				t.Fatalf("%+#v cannot unmarshal: %s", testValue.Value, err)
+			}
+			if changed {
+				assert.Equal(t, testValue.Expected, val.StringArray)
+				assert.Equal(t, testValue.Expected, v.Get("stringarray"))
+			} else {
+				assert.Equal(t, defaultVal, val.StringArray)
+			}
+		}
+	}
+}
+
+// nolint: dupl
 func TestBindPFlagsIntSlice(t *testing.T) {
 	tests := []struct {
 		Expected []int
 		Value    string
 	}{
-		{nil, ""},
+		{[]int{}, ""},
 		{[]int{1}, "1"},
 		{[]int{2, 3}, "2,3"},
 	}
@@ -943,6 +1006,7 @@ func TestBindPFlagsIntSlice(t *testing.T) {
 			}
 			if changed {
 				assert.Equal(t, testValue.Expected, val.IntSlice)
+				assert.Equal(t, testValue.Expected, v.Get("intslice"))
 			} else {
 				assert.Equal(t, defaultVal, val.IntSlice)
 			}
@@ -951,8 +1015,8 @@ func TestBindPFlagsIntSlice(t *testing.T) {
 }
 
 func TestBindPFlag(t *testing.T) {
-	var testString = "testing"
-	var testValue = newStringValue(testString, &testString)
+	testString := "testing"
+	testValue := newStringValue(testString, &testString)
 
 	flag := &pflag.Flag{
 		Name:    "testflag",
@@ -968,6 +1032,11 @@ func TestBindPFlag(t *testing.T) {
 	flag.Changed = true // hack for pflag usage
 
 	assert.Equal(t, "testing_mutate", Get("testvalue"))
+}
+
+func TestBindPFlagDetectNilFlag(t *testing.T) {
+	result := BindPFlag("testvalue", nil)
+	assert.Error(t, result)
 }
 
 func TestBindPFlagStringToString(t *testing.T) {
@@ -1021,12 +1090,13 @@ func TestBoundCaseSensitivity(t *testing.T) {
 	assert.Equal(t, "brown", Get("eyes"))
 
 	BindEnv("eYEs", "TURTLE_EYES")
-	os.Setenv("TURTLE_EYES", "blue")
+
+	testutil.Setenv(t, "TURTLE_EYES", "blue")
 
 	assert.Equal(t, "blue", Get("eyes"))
 
-	var testString = "green"
-	var testValue = newStringValue(testString, &testString)
+	testString := "green"
+	testValue := newStringValue(testString, &testString)
 
 	flag := &pflag.Flag{
 		Name:    "eyeballs",
@@ -1105,9 +1175,11 @@ func TestFindsNestedKeys(t *testing.T) {
 				},
 				map[string]interface{}{
 					"type": "Chocolate",
-				}, map[string]interface{}{
+				},
+				map[string]interface{}{
 					"type": "Blueberry",
-				}, map[string]interface{}{
+				},
+				map[string]interface{}{
 					"type": "Devil's Food",
 				},
 			},
@@ -1169,7 +1241,9 @@ func TestReadBufConfig(t *testing.T) {
 	t.Log(v.AllKeys())
 
 	assert.True(t, v.InConfig("name"))
+	assert.True(t, v.InConfig("clothing.jacket"))
 	assert.False(t, v.InConfig("state"))
+	assert.False(t, v.InConfig("clothing.hat"))
 	assert.Equal(t, "steve", v.Get("name"))
 	assert.Equal(t, []interface{}{"skateboarding", "snowboarding", "go"}, v.Get("hobbies"))
 	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[string]interface{}{"size": "large"}}, v.Get("clothing"))
@@ -1200,8 +1274,9 @@ func TestIsSet(t *testing.T) {
 	v.BindEnv("foo")
 	v.BindEnv("clothing.hat")
 	v.BindEnv("clothing.hats")
-	os.Setenv("FOO", "bar")
-	os.Setenv("CLOTHING_HAT", "bowler")
+
+	testutil.Setenv(t, "FOO", "bar")
+	testutil.Setenv(t, "CLOTHING_HAT", "bowler")
 
 	assert.True(t, v.IsSet("eyes"))           // in the config file
 	assert.True(t, v.IsSet("foo"))            // in the environment
@@ -1667,11 +1742,29 @@ func TestSafeWriteConfigAsWithExistingFile(t *testing.T) {
 	assert.True(t, ok, "Expected ConfigFileAlreadyExistsError")
 }
 
+func TestWriteHiddenFile(t *testing.T) {
+	v := New()
+	fs := afero.NewMemMapFs()
+	fs.Create("/test/.config")
+	v.SetFs(fs)
+
+	v.SetConfigName(".config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath("/test")
+
+	err := v.ReadInConfig()
+	require.NoError(t, err)
+
+	err = v.WriteConfig()
+	require.NoError(t, err)
+}
+
 var yamlMergeExampleTgt = []byte(`
 hello:
     pop: 37890
     largenum: 765432101234567
     num2pow63: 9223372036854775808
+    universe: null
     world:
     - us
     - uk
@@ -2014,18 +2107,18 @@ func TestCaseInsensitiveSet(t *testing.T) {
 	Reset()
 	m1 := map[string]interface{}{
 		"Foo": 32,
-		"Bar": map[interface{}]interface {
-		}{
+		"Bar": map[interface{}]interface{}{
 			"ABc": "A",
-			"cDE": "B"},
+			"cDE": "B",
+		},
 	}
 
 	m2 := map[string]interface{}{
 		"Foo": 52,
-		"Bar": map[interface{}]interface {
-		}{
+		"Bar": map[interface{}]interface{}{
 			"bCd": "A",
-			"eFG": "B"},
+			"eFG": "B",
+		},
 	}
 
 	Set("Given1", m1)
@@ -2324,6 +2417,49 @@ func TestKeyDelimiter(t *testing.T) {
 	assert.NoError(t, v.Unmarshal(&actual))
 
 	assert.Equal(t, expected, actual)
+}
+
+var yamlDeepNestedSlices = []byte(`TV:
+- title: "The expanse"
+  seasons:
+  - first_released: "December 14, 2015"
+    episodes:
+    - title: "Dulcinea"
+      air_date: "December 14, 2015"
+    - title: "The Big Empty"
+      air_date: "December 15, 2015"
+    - title: "Remember the Cant"
+      air_date: "December 22, 2015"
+  - first_released: "February 1, 2017"
+    episodes:
+    - title: "Safe"
+      air_date: "February 1, 2017"
+    - title: "Doors & Corners"
+      air_date: "February 1, 2017"
+    - title: "Static"
+      air_date: "February 8, 2017"
+  episodes:
+    - ["Dulcinea", "The Big Empty", "Remember the Cant"]
+    - ["Safe", "Doors & Corners", "Static"]
+`)
+
+func TestSliceIndexAccess(t *testing.T) {
+	v.SetConfigType("yaml")
+	r := strings.NewReader(string(yamlDeepNestedSlices))
+
+	err := v.unmarshalReader(r, v.config)
+	require.NoError(t, err)
+
+	assert.Equal(t, "The expanse", v.GetString("tv.0.title"))
+	assert.Equal(t, "February 1, 2017", v.GetString("tv.0.seasons.1.first_released"))
+	assert.Equal(t, "Static", v.GetString("tv.0.seasons.1.episodes.2.title"))
+	assert.Equal(t, "December 15, 2015", v.GetString("tv.0.seasons.0.episodes.1.air_date"))
+
+	// Test for index out of bounds
+	assert.Equal(t, "", v.GetString("tv.0.seasons.2.first_released"))
+
+	// Accessing multidimensional arrays
+	assert.Equal(t, "Static", v.GetString("tv.0.episodes.1.2"))
 }
 
 func BenchmarkGetBool(b *testing.B) {

@@ -11,9 +11,8 @@ import (
 	"io"
 	"os"
 
+	crypt "github.com/sagikazarmark/crypt/config"
 	"github.com/team-rocos/viper"
-
-	crypt "github.com/bketelsen/crypt/config"
 )
 
 type remoteConfigProvider struct{}
